@@ -105,7 +105,7 @@ if (typeof StackExchange === 'undefined') {
 
 let globals = {};
 
-globals.debugging = true;
+globals.debugging = false;
 
 if (globals.debugging) {
     globals.room = {
