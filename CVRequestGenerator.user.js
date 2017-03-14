@@ -19,17 +19,6 @@ const scriptVersion = GM_info.script.version;
 const scriptURL = GM_info.script.updateURL;
 const scriptVersionURL = 'https://github.com/Tiny-Giant/myuserscripts/raw/master/CVRequestGenerator.version';
 
-// <a href="#" class="request-gui-toggle">request</a>
-// <div class="request-gui-dialog" style="display: none">
-//     <form class="request-gui-form">
-//         <ul class="request-gui-type-select"></ul>
-//         <ul class="request-gui-tag-select"></ul>
-//         <input type="text" class="request-gui-reason" placeholder="Enter reason...">
-//         <input type="submit" class="request-gui-submit" value="Send Request">
-//     </form>
-//     <a href="#" class="request-gui-update">Check for updates</a>
-// </div>
-
 document.body.appendChild(Object.assign(document.createElement('style'), { textContent: `
     .request-gui-toggle {
         padding:0 3px 2px 3px;
@@ -102,6 +91,9 @@ document.body.appendChild(Object.assign(document.createElement('style'), { textC
         font-size: 13px;
         line-height: 20px;
         margin: 0px;
+    }
+    .request-gui-label {
+        padding-right: 30px;
     }
 `}));
 
@@ -203,7 +195,8 @@ funcs.update = force => new Promise((resolve, reject) => {
         },
         onerror: xhr => {
             reject(xhr);
-            throw new Error(['Failed querying new script version. Check the console.', xhr]);
+            funcs.notify('Failed querying new script version. Check the console.');
+            throw new Error('Failed querying new script version. Check the console.');
         }
     });
 });
@@ -215,21 +208,24 @@ funcs.fetchFkey = () => new Promise((resolve, reject) =>  {
         onload: xhr =>  {
             if (xhr.status !== 200) {
                 reject(xhr);
-                throw new Error(['Failed retrieving key', xhr]);
+                funcs.notify('Failed retrieving key');
+                throw new Error('Failed retrieving key');
             }
             
             let fkey = xhr.responseText.match(/hidden" value="([\dabcdef]{32})/)[1];
 
             if (fkey === null)  {
                 reject(xhr);
-                throw new Error(['Failed retrieving key.', xhr]);
+                funcs.notify('Failed retrieving key.');
+                throw new Error('Failed retrieving key.');
             }
             
             resolve(fkey);
         },
         onerror: xhr => {
             reject(xhr);
-            throw new Error(['Failed retrieving key.', xhr]);
+            funcs.notify('Failed retrieving key.');
+            throw new Error('Failed retrieving key.');
         }
     });
 });
@@ -244,16 +240,20 @@ funcs.request = request => new Promise(async (resolve, reject) =>  {
         headers:  { 'Content-Type': 'application/x-www-form-urlencoded' },
         data: 'text=' + encodeURIComponent(request) + '&fkey=' + fkey,
         onload: xhr => {
-            if (xhr.status !== 200) {
+            if (xhr.status !== 200 || !JSON.parse(xhr.responseText).id) {
                 reject(xhr);
-                throw new Error(['Failed sending request', xhr]);
+                console.log(xhr)
+                funcs.notify('Failed sending request')
+                throw new Error('Failed sending request');
             }
             funcs.notify('Close vote request sent.',1000);
             resolve(xhr);
         },
         onerror: xhr => {
             reject(xhr);
-            throw new Error(['Failed sending request.', xhr]);
+            console.log(xhr)
+            funcs.notify('Failed sending request.')
+            throw new Error('Failed sending request.');
         }
     });
 });
@@ -270,7 +270,8 @@ funcs.addXHRListener = callback => {
 
 function RequestGUI(scope) {
     if (!(scope instanceof HTMLElement)) {
-        throw new Error(['CVRGUI expects scope to be an instance of HTML element.', scope]);
+        funcs.notify('CVRGUI expects scope to be an instance of HTML element.');
+        throw new Error('CVRGUI expects scope to be an instance of HTML element.');
     }
 
     const question = {};
@@ -279,7 +280,8 @@ function RequestGUI(scope) {
     question.id = scope.dataset.questionid;
 
     if (typeof question.id === 'undefined') {
-        throw new Error(['Question ID is not defined.', scope]);
+        funcs.notify('Question ID is not defined.');
+        throw new Error('Question ID is not defined.');
     }
 
     question.title = (() =>  {
@@ -323,13 +325,11 @@ function RequestGUI(scope) {
     })();
     
     question.tags = [...scope.querySelectorAll('.post-taglist .post-tag')].map(e => e.textContent);
-    
-    console.log(question.tags);
 
     const nodes = new Proxy({
         scope: scope,
         menu: scope.querySelector('.post-menu'),
-        wrap: Object.assign(document.createElement('span'), {
+        wrapper: Object.assign(document.createElement('span'), {
             className: 'request-gui-wrapper',
             innerHTML: `
                 <a href="#" class="request-gui-toggle">request</a>
@@ -347,13 +347,13 @@ function RequestGUI(scope) {
     }, {
         get: (target, key) => {
             if (!(key in target)) {
-                target[key] = nodes.wrap.querySelector(`.request-gui-${ key.replace(/[A-Z]/g, match => '-' + match.toLowerCase()) }`);
+                target[key] = nodes.wrapper.querySelector(`.request-gui-${ key.replace(/[A-Z]/g, match => '-' + match.toLowerCase()) }`);
             }
             return target[key];
         },
         has: (target, key) => {
             if (!(key in target)) {
-                target[key] = nodes.wrap.querySelector(`.request-gui-${ key.replace(/[A-Z]/g, match => '-' + match.toLowerCase()) }`);
+                target[key] = nodes.wrapper.querySelector(`.request-gui-${ key.replace(/[A-Z]/g, match => '-' + match.toLowerCase()) }`);
             }
             return !!target[key];
         },
@@ -361,25 +361,25 @@ function RequestGUI(scope) {
     
     Object.assign(nodes.dialog, {
         hide: () =>  {
-            nodes.dialog.style.display = '';
+            nodes.dialog.style.display = 'none';
         },
         show: () =>  {
-            nodes.dialog.style.display = 'block';
+            nodes.dialog.style.display = '';
         },
         toggle: () =>  {
-            nodes.dialog.style.display = nodes.dialog.style.display ? '' : 'block';
+            nodes.dialog[['hide', 'show'][+!!nodes.dialog.style.display]]();
         }
     });
     
     nodes.tagSelect.insertAdjacentHTML('beforeend', question.tags.reduce((m, e) => m + `<a href="#" class="post-tag">${ e }</a>`, ''));
 
     if (typeof nodes.menu !== "undefined") {
-        nodes.menu.appendChild(nodes.wrap);
+        nodes.menu.appendChild(nodes.wrapper);
     }
 
     const listeners = {
         wrapper: { 
-            click: event => event.stopPropogation()
+            click: event => event.stopPropagation()
         },
         toggle: {
             click: event => {
@@ -443,13 +443,15 @@ function RequestGUI(scope) {
             for (let type in listeners[node]) {
                 if(type in listeners[node]) {
                     nodes[node].addEventListener(type, listeners[node][type], false);
+                } else {
                 }
             }
+        } else {
         }
     }
 
     document.addEventListener('click', event => {
-        if (nodes.dialog.style.display) {
+        if (!nodes.dialog.style.display) {
             nodes.dialog.hide();
         }
     }, false);
@@ -508,8 +510,9 @@ for(let question of questions) {
 }
 
 funcs.addXHRListener(event =>  {
-    if (/ajax-load-realtime/.test(this.responseURL)) {
-        var matches = /question" data-questionid="(\d+)/.exec(this.responseText);
+    if (/ajax-load-realtime|review.next\-task|review.task\-reviewed/.test(event.target.responseURL)) {
+        
+        var matches = /data-questionid=\\?"(\d+)/.exec(event.target.responseText);
         
         if (matches === null) {
             return;
@@ -554,7 +557,7 @@ funcs.addXHRListener(event =>  {
     };
     
     funcs.addXHRListener(event => {
-        if (/close\/popup/.test(this.responseURL)) {
+        if (/close\/popup/.test(event.target.responseURL)) {
             nodes.popup = document.querySelector('#popup-close-question');
 
             if (nodes.popup === null) {
@@ -569,17 +572,17 @@ funcs.addXHRListener(event =>  {
 
             nodes.votes.insertAdjacentHTML('beforebegin', HTML);
             
-            nodes.checkbox = nodes.popup.querySelector('.request-gui-checkbox');
-            
-            nodes.textarea = nodes.popup.querySelector('textarea');
-            
-            nodes.submit = nodes.popup.querySelector('.popup-submit');
+            Object.assign(nodes, {
+                checkbox: nodes.popup.querySelector('.request-gui-checkbox'),
+                textare: nodes.popup.querySelector('textarea'),
+                submit: nodes.popup.querySelector('.popup-submit')
+            });
         }
     });
     
     funcs.addXHRListener(event => {
-        if (/close\/add/.test(this.responseURL)) {
-            let questionid = /\d+/.exec(this.responseURL);
+        if (/close\/add/.test(event.target.responseURL)) {
+            let questionid = /\d+/.exec(event.target.responseURL);
             
             if (questionid === null) {
                 return;
@@ -597,7 +600,7 @@ funcs.addXHRListener(event =>  {
                 reasons[102][3] = nodes.textarea.value; 
             }
             
-            let data = JSON.parse(this.responseText);
+            let data = JSON.parse(event.target.responseText);
             
             let reason = reasons[data.CloseReason];
             
